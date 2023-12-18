@@ -5,6 +5,8 @@
   "dropout_rate": 0.1,
   "context_length": null,
   "scaling": true,
-  "trainer_kwargs": {"max_epochs": 2},
+  "early_stopping_patience": 10,
+  "min_delta": 0.01,
+  "trainer_kwargs": {"max_epochs": 200},
   "use_exogenous": true
 }

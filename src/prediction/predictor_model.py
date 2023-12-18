@@ -41,9 +41,11 @@ class Forecaster:
         lr: float = 1e-3,
         weight_decay: float = 1e-08,
         dropout_rate: float = 0.1,
-        patience: int = 10,
+        lr_patience: int = 10,
         scaling: bool = True,
         batch_size: int = 32,
+        early_stopping_patience: int = 20,
+        min_delta: float = 0.01,
         trainer_kwargs: dict = {},
         use_exogenous: bool = True,
         random_state: int = 0,
@@ -76,11 +78,15 @@ class Forecaster:
 
             dropout_rate (float): Dropout regularization parameter (default: 0.1).
 
-            patience (int) Patience parameter for learning rate scheduler.
+            lr_patience (int) Patience parameter for learning rate scheduler.
 
             scaling (bool): Whether to automatically scale the target values (default: true).
 
             batch_size (int) The size of the batches to be used for training (default: 32).
+
+            early_stopping_patience (int): Patience used by early stopper.
+
+            min_delta (float): Minimum imporovement required by early stopper.
 
             use_exogenous (bool): If true, uses covariates in training.
 
@@ -94,12 +100,14 @@ class Forecaster:
         self.lr = lr
         self.weight_decay = weight_decay
         self.dropout_rate = dropout_rate
-        self.patience = patience
+        self.lr_patience = lr_patience
         self.scaling = scaling
         self.batch_size = batch_size
+        self.early_stopping_patience = early_stopping_patience
+        self.min_delta = min_delta
         self.trainer_kwargs = trainer_kwargs
         self.random_state = random_state
-        self.use_exogenous = use_exogenous
+        self.use_exogenous = use_exogenous and data_schema.future_covariates
         self._is_trained = False
         self.freq = self.map_frequency(data_schema.frequency)
         self.history_length = None
@@ -115,7 +123,8 @@ class Forecaster:
 
         early_stopping = EarlyStopping(
             monitor="train_loss",
-            patience=20,
+            patience=self.early_stopping_patience,
+            min_delta=self.min_delta,
             verbose=True,
             mode="min",
         )
@@ -143,7 +152,7 @@ class Forecaster:
             lr=self.lr,
             weight_decay=self.weight_decay,
             dropout_rate=self.dropout_rate,
-            patience=self.patience,
+            patience=self.lr_patience,
             scaling=self.scaling,
             batch_size=self.batch_size,
             freq=self.freq,
@@ -205,8 +214,12 @@ class Forecaster:
         ]
 
         if self.history_length:
+            new_length = []
             for series in all_series:
                 series = series.iloc[-self.history_length :]
+                new_length.append(series.copy())
+            all_series = new_length
+
         cov_names = []
 
         if self.use_exogenous:
