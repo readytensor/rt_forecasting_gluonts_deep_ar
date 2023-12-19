@@ -140,9 +140,7 @@ class Forecaster:
         if not self.use_exogenous:
             num_covariates = 0
         else:
-            num_covariates = len(
-                data_schema.past_covariates + data_schema.future_covariates
-            )
+            num_covariates = len(data_schema.future_covariates)
 
         self.model = DeepAREstimator(
             prediction_length=data_schema.forecast_length,
@@ -264,6 +262,7 @@ class Forecaster:
         self.training_all_series = all_series
         self.training_future_covariates = all_future_covariates
         self.all_ids = all_ids
+
         return gluonts_dataset
 
     def prepare_test_data(
@@ -301,7 +300,6 @@ class Forecaster:
             all_concatenated_covariates.append(concatenated_covariates)
 
         if data_schema.future_covariates and self.use_exogenous:
-            print((all_concatenated_covariates[0]))
             list_dataset = [
                 {
                     "start": series[data_schema.time_col].iloc[0],
@@ -322,6 +320,7 @@ class Forecaster:
             ]
 
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
+
         return gluonts_dataset
 
     def map_frequency(self, frequency: str) -> str:
@@ -382,7 +381,6 @@ class Forecaster:
         test_dataset = self.prepare_test_data(
             test_data=test_data, data_schema=self.data_schema
         )
-
         predictions = self.predictor.predict(test_dataset)
         predictions_df = test_data.copy()
 
