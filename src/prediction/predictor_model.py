@@ -1,16 +1,15 @@
 import os
 import warnings
 import joblib
+import torch
 import numpy as np
 import pandas as pd
-from typing import Union, List
 from gluonts.torch.model.deepar import DeepAREstimator
 from schema.data_schema import ForecastingSchema
 from sklearn.exceptions import NotFittedError
 from gluonts.dataset.common import ListDataset
 from pytorch_lightning import seed_everything
 from lightning.pytorch.callbacks import EarlyStopping
-import torch
 
 
 warnings.filterwarnings("ignore")
@@ -159,7 +158,18 @@ class Forecaster:
             trainer_kwargs=self.trainer_kwargs,
         )
 
-    def prepare_time_column(self, data: pd.DataFrame, is_train=True) -> pd.DataFrame:
+    def prepare_time_column(
+        self, data: pd.DataFrame, is_train: bool = True
+    ) -> pd.DataFrame:
+        """
+        Adds time column of tyype DATETIME to datasets that have time column dtype as INT.
+
+        Args:
+            data (pd.DataFrame): The input dataset.
+            is_train (bool): Set to true for training dataset and false for testing dataset.
+
+            Returns (pd.DataFrame): The dataset after processing time column.
+        """
         # sort data
         time_col_dtype = self.data_schema.time_col_dtype
         id_col = self.data_schema.id_col
@@ -201,9 +211,20 @@ class Forecaster:
     def prepare_training_data(
         self,
         history: pd.DataFrame,
-        data_schema: ForecastingSchema,
     ) -> ListDataset:
+        """
+        Applys the history_forecast_ratio parameter and puts the training data into the shape expected by GluonTS.
+
+        Args:
+            history (pd.DataFrame): The input dataset.
+
+        Returns (ListDataset): The processed dataset expected by GluonTS.
+        """
+        data_schema = self.data_schema
+        # Make sure there is a date column
         history = self.prepare_time_column(data=history, is_train=True)
+
+        # Manage each series in the training data separately
         all_covariates = []
         groups_by_ids = history.groupby(data_schema.id_col)
         all_ids = list(groups_by_ids.groups.keys())
@@ -212,6 +233,7 @@ class Forecaster:
             for id_ in all_ids
         ]
 
+        # Enforces the history_forecast_ratio parameter
         if self.history_length:
             new_length = []
             for series in all_series:
@@ -222,24 +244,21 @@ class Forecaster:
         cov_names = []
 
         if self.use_exogenous:
-            cov_names = data_schema.future_covariates  # + data_schema.past_covariates
+            cov_names = data_schema.future_covariates
 
+        # Put future covariates into separate list
         all_covariates = []
-        all_future_covariates = []
 
         for series in all_series:
             series_covariates = []
-            series_future_covariates = []
 
             for covariate in cov_names:
                 series_covariates.append(series[covariate])
-                if covariate in self.data_schema.future_covariates:
-                    series_future_covariates.append(series[covariate])
 
             all_covariates.append(series_covariates)
-            if series_future_covariates:
-                all_future_covariates.append(series_future_covariates)
 
+        # If future covariates are available for training, create a dataset with future covariate features,
+        # otherwise a dataset with only target series will be created.
         if cov_names and self.use_exogenous:
             list_dataset = [
                 {
@@ -261,16 +280,23 @@ class Forecaster:
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
 
         self.training_all_series = all_series
-        self.training_future_covariates = all_future_covariates
+        self.training_future_covariates = all_covariates
         self.all_ids = all_ids
 
         return gluonts_dataset
 
-    def prepare_test_data(
-        self, test_data: pd.DataFrame, data_schema: ForecastingSchema
-    ) -> ListDataset:
+    def prepare_test_data(self, test_data: pd.DataFrame) -> ListDataset:
+        """
+        Puts the testing data into the shape expected by GluonTS.
+
+         Args:
+             test_data (pd.DataFrame): The input dataset.
+
+         Returns (ListDataset): The processed dataset expected by GluonTS.
+        """
+        data_schema = self.data_schema
         test_data = self.prepare_time_column(data=test_data, is_train=False)
-        groups_by_ids = test_data.groupby(data_schema.id_col)
+        groups_by_ids = test_data.groupby(self.data_schema.id_col)
         all_ids = list(groups_by_ids.groups.keys())
         all_series = [
             groups_by_ids.get_group(id_).drop(columns=data_schema.id_col)
@@ -325,6 +351,14 @@ class Forecaster:
         return gluonts_dataset
 
     def map_frequency(self, frequency: str) -> str:
+        """
+        Maps the frequency in the data schema to the frequency expected by GluonTS.
+
+        Args:
+            frequency (str): The frequency from the schema.
+
+        Returns (str): The mapped frequency.
+        """
         frequency = frequency.lower()
         frequency = frequency.split("frequency.")[1]
         if frequency == "yearly":
@@ -347,7 +381,6 @@ class Forecaster:
     def fit(
         self,
         history: pd.DataFrame,
-        data_schema: ForecastingSchema,
     ) -> None:
         """Fit the Forecaster to the training data.
         A separate DeepAR model is fit to each series that is contained
@@ -355,12 +388,11 @@ class Forecaster:
 
         Args:
             history (pandas.DataFrame): The features of the training data.
-            data_schema (ForecastingSchema): The schema of the training data.
         """
         np.random.seed(self.random_state)
         seed_everything(self.random_state)
 
-        history = self.prepare_training_data(history=history, data_schema=data_schema)
+        history = self.prepare_training_data(history=history)
         self.predictor = self.model.train(history)
         self._is_trained = True
 
@@ -379,9 +411,7 @@ class Forecaster:
             raise NotFittedError("Model is not fitted yet.")
 
         seed_everything(self.random_state)
-        test_dataset = self.prepare_test_data(
-            test_data=test_data, data_schema=self.data_schema
-        )
+        test_dataset = self.prepare_test_data(test_data=test_data)
         predictions = self.predictor.predict(test_dataset)
         predictions_df = test_data.copy()
 
@@ -442,7 +472,7 @@ def train_predictor_model(
         data_schema=data_schema,
         **hyperparameters,
     )
-    model.fit(history=history, data_schema=data_schema)
+    model.fit(history=history)
     return model
 
 
