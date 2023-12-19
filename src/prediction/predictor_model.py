@@ -162,7 +162,7 @@ class Forecaster:
         self, data: pd.DataFrame, is_train: bool = True
     ) -> pd.DataFrame:
         """
-        Adds time column of tyype DATETIME to datasets that have time column dtype as INT.
+        Adds time column of type DATETIME to datasets that have time column dtype as INT.
 
         Args:
             data (pd.DataFrame): The input dataset.
@@ -185,7 +185,7 @@ class Forecaster:
             num_series = series_val_counts.shape[0]
 
             if is_train:
-                # since prophet requires a datetime column, we will make up a timeline
+                # since GluonTS requires a date column, we will make up a timeline
                 start_date = pd.Timestamp(self.made_up_start_dt)
                 datetimes = pd.date_range(
                     start=start_date, periods=series_len, freq=self.made_up_frequency
