@@ -133,9 +133,10 @@ class Forecaster:
 
         if torch.cuda.is_available():
             print("GPU is available")
-            self.trainer_kwargs["accelerator"] = "gpu"
         else:
             print("GPU is not available")
+            if self.trainer_kwargs.get("accelerator") == "gpu":
+                self.trainer_kwargs.pop("accelerator")
 
         if not self.use_exogenous:
             num_covariates = 0
