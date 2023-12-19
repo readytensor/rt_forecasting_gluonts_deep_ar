@@ -223,7 +223,7 @@ class Forecaster:
         cov_names = []
 
         if self.use_exogenous:
-            cov_names = data_schema.future_covariates + data_schema.past_covariates
+            cov_names = data_schema.future_covariates  # + data_schema.past_covariates
 
         all_covariates = []
         all_future_covariates = []
@@ -301,6 +301,7 @@ class Forecaster:
             all_concatenated_covariates.append(concatenated_covariates)
 
         if data_schema.future_covariates and self.use_exogenous:
+            print((all_concatenated_covariates[0]))
             list_dataset = [
                 {
                     "start": series[data_schema.time_col].iloc[0],
