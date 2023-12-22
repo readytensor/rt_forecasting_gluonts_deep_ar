@@ -159,7 +159,7 @@ class Forecaster:
             scaling=self.scaling,
             batch_size=self.batch_size,
             freq=self.freq,
-            num_feat_static_real=num_covariates,
+            num_feat_dynamic_real=num_covariates,
             trainer_kwargs=self.trainer_kwargs,
         )
 
@@ -269,7 +269,7 @@ class Forecaster:
                 {
                     "start": series[data_schema.time_col].iloc[0],
                     "target": series[data_schema.target],
-                    "feat_static_real": series_covariates,
+                    "feat_dynamic_real": series_covariates,
                 }
                 for series, series_covariates in zip(all_series, all_covariates)
             ]
@@ -336,7 +336,7 @@ class Forecaster:
                 {
                     "start": series[data_schema.time_col].iloc[0],
                     "target": series[data_schema.target],
-                    "feat_static_real": series_covariates,
+                    "feat_dynamic_real": series_covariates,
                 }
                 for series, series_covariates in zip(
                     self.training_all_series, all_concatenated_covariates
