@@ -149,8 +149,6 @@ class Forecaster:
             num_future_covariates = len(data_schema.future_covariates)
             num_static_covariates = len(data_schema.static_covariates)
 
-        print(num_static_covariates)
-
         self.model = DeepAREstimator(
             prediction_length=data_schema.forecast_length,
             context_length=self.context_length,
@@ -289,7 +287,6 @@ class Forecaster:
         if self.use_exogenous and future_cov_names:
             for item, cov_series in zip(list_dataset, all_covariates):
                 item["feat_dynamic_real"] = cov_series
-                print(cov_series)
 
         if self.use_exogenous and static_cov_names:
             for item, cov_series in zip(list_dataset, static_covariates):
