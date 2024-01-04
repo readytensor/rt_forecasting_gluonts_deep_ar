@@ -110,7 +110,7 @@ class Forecaster:
         self.min_delta = min_delta
         self.trainer_kwargs = trainer_kwargs
         self.random_state = random_state
-        self.use_exogenous = use_exogenous and data_schema.future_covariates
+        self.use_exogenous = use_exogenous
         self._is_trained = False
         self.freq = self.map_frequency(data_schema.frequency)
         self.history_length = None
@@ -143,9 +143,13 @@ class Forecaster:
                 self.trainer_kwargs.pop("accelerator")
 
         if not self.use_exogenous:
-            num_covariates = 0
+            num_future_covariates = 0
+            num_static_covariates = 0
         else:
-            num_covariates = len(data_schema.future_covariates)
+            num_future_covariates = len(data_schema.future_covariates)
+            num_static_covariates = len(data_schema.static_covariates)
+
+        print(num_static_covariates)
 
         self.model = DeepAREstimator(
             prediction_length=data_schema.forecast_length,
@@ -159,7 +163,8 @@ class Forecaster:
             scaling=self.scaling,
             batch_size=self.batch_size,
             freq=self.freq,
-            num_feat_dynamic_real=num_covariates,
+            num_feat_dynamic_real=num_future_covariates,
+            num_feat_static_real=num_static_covariates,
             trainer_kwargs=self.trainer_kwargs,
         )
 
@@ -246,47 +251,56 @@ class Forecaster:
                 new_length.append(series.copy())
             all_series = new_length
 
-        cov_names = []
+        future_cov_names = []
+        static_cov_names = []
 
         if self.use_exogenous:
-            cov_names = data_schema.future_covariates
+            future_cov_names = data_schema.future_covariates
+            static_cov_names = data_schema.static_covariates
 
         # Put future covariates into separate list
         all_covariates = []
+        static_covariates = []
 
         for series in all_series:
             series_covariates = []
+            series_static_covariates = []
 
-            for covariate in cov_names:
+            for covariate in future_cov_names:
                 series_covariates.append(series[covariate])
 
+            for covariate in static_cov_names:
+                series_static_covariates.append(series[covariate].iloc[0])
+
             all_covariates.append(series_covariates)
+            static_covariates.append(series_static_covariates)
 
         # If future covariates are available for training, create a dataset with future covariate features,
         # otherwise a dataset with only target series will be created.
-        if cov_names and self.use_exogenous:
-            list_dataset = [
-                {
-                    "start": series[data_schema.time_col].iloc[0],
-                    "target": series[data_schema.target],
-                    "feat_dynamic_real": series_covariates,
-                }
-                for series, series_covariates in zip(all_series, all_covariates)
-            ]
-        else:
-            list_dataset = [
-                {
-                    "start": series[data_schema.time_col].iloc[0],
-                    "target": series[data_schema.target],
-                }
-                for series in all_series
-            ]
+
+        list_dataset = [
+            {
+                "start": series[data_schema.time_col].iloc[0],
+                "target": series[data_schema.target],
+            }
+            for series in all_series
+        ]
+
+        if self.use_exogenous and future_cov_names:
+            for item, cov_series in zip(list_dataset, all_covariates):
+                item["feat_dynamic_real"] = cov_series
+                print(cov_series)
+
+        if self.use_exogenous and static_cov_names:
+            for item, cov_series in zip(list_dataset, static_covariates):
+                item["feat_static_real"] = cov_series
 
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
 
         self.training_all_series = all_series
         self.training_future_covariates = all_covariates
         self.all_ids = all_ids
+        self.static_covariates = static_covariates
 
         return gluonts_dataset
 
@@ -331,25 +345,21 @@ class Forecaster:
             ]
             all_concatenated_covariates.append(concatenated_covariates)
 
+        list_dataset = [
+            {
+                "start": series[data_schema.time_col].iloc[0],
+                "target": series[data_schema.target],
+            }
+            for series in self.training_all_series
+        ]
+
         if data_schema.future_covariates and self.use_exogenous:
-            list_dataset = [
-                {
-                    "start": series[data_schema.time_col].iloc[0],
-                    "target": series[data_schema.target],
-                    "feat_dynamic_real": series_covariates,
-                }
-                for series, series_covariates in zip(
-                    self.training_all_series, all_concatenated_covariates
-                )
-            ]
-        else:
-            list_dataset = [
-                {
-                    "start": series[data_schema.time_col].iloc[0],
-                    "target": series[data_schema.target],
-                }
-                for series in self.training_all_series
-            ]
+            for item, cov_series in zip(list_dataset, all_concatenated_covariates):
+                item["feat_dynamic_real"] = cov_series
+
+        if self.use_exogenous and data_schema.static_covariates:
+            for item, cov_series in zip(list_dataset, self.static_covariates):
+                item["feat_static_real"] = cov_series
 
         gluonts_dataset = ListDataset(list_dataset, freq=self.freq)
 
